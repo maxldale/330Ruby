@@ -9,7 +9,19 @@ class Synsets
     end
 
     def addSet(synset_id, nouns)
-        raise Exception, "Not implemented"
+        if !synset_id.is_a? Integer
+        	raise Exception, "Synsets: addSet: synset_id NOT an Integer!"
+        elsif !nouns.is_a? Array
+        	raise Exception, "Synsets: addSet: nouns NOT an Array!"
+        elsif synset_id < 0
+        	return false #synset_id is negative
+        elseif nouns.empty?
+        	return false #nouns is empty
+        elseif !lookup(synset_id).empty?
+        	return false #synset_id already exists
+        els
+        	raise Exception, "Not implemented"
+        end
     end
 
     def lookup(synset_id)
