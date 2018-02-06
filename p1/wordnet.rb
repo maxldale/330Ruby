@@ -2,10 +2,25 @@ require_relative "graph.rb"
 
 class Synsets
     def initialize
+    	@synsets = Hash.new
+    	@synsets.default = nil
     end
 
     def load(synsets_file)
-        raise Exception, "Not implemented"
+    	#NOTE: We may assume that the file exists
+    	#It's still a good habit to check
+    	if !File.exist? synsets_file
+    		raise Exception, "Synsets: load: synsets_file does NOT exist"
+    	elsif !File.file? synsets_file
+    		raise Exception, "Synsets: load: synsets_file NOT a file"
+    	else
+    		file_lines = File.readlines(synsets_file)
+    		error_lines = Hash.new
+    		file_lines.each { |line|
+    			pattern = /id: (\d*) synset: ((\w*[,]?)*)/
+    		}
+    		return [] #return some kind of array TODO
+    	end
     end
 
     def addSet(synset_id, nouns)
@@ -15,17 +30,18 @@ class Synsets
         	raise Exception, "Synsets: addSet: nouns NOT an Array!"
         elsif synset_id < 0
         	return false #synset_id is negative
-        elseif nouns.empty?
+        elsif nouns.empty?
         	return false #nouns is empty
-        elseif !lookup(synset_id).empty?
+        elsif lookup(synset_id).is_a? Array
         	return false #synset_id already exists
-        els
-        	raise Exception, "Not implemented"
+        else
+        	@synsets[synset_id] = nouns
+        	return true #added synset_id and nouns to synsets
         end
     end
 
     def lookup(synset_id)
-        raise Exception, "Not implemented"
+        @synsets[synset_id]
     end
 
     def findSynsets(to_find)
