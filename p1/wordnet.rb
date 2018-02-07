@@ -26,22 +26,18 @@ class Synsets
     				synset = res[2].split(',')
     				if lookup(id).empty?
     					if !success_lines[id].is_a? Array
-    						puts "success #{id}"
     						success_lines[id] = synset
     					else
     						#A previous line includes this ID, line invalid
     						error_lines.push(index)
-    						puts "fail #{id}"
     					end
     				else
     					#Synset already contains this ID, line invalid
     					error_lines.push(index)
-    					puts "fail #{id}"
     				end
     			else
     				#Failed to match on pattern, line invalid
     				error_lines.push(index)
-    				puts "fail #{line}"
     			end
     			index = index + 1
     		}
@@ -51,12 +47,11 @@ class Synsets
     	puts success_lines
     	if error_lines.empty?
     		success_lines.keys.each do |id|
-    			puts id
     			if !addSet(id, success_lines[id])
     				raise Exception, "Synsets: load: id: #{id} exists already!"
     			end
-    				return nil #Everything checked out and was added
     		end
+    		return nil #Everything checked out and was added
     	else
     		return error_lines #These lines didn't check out, no changes
     	end
@@ -72,10 +67,8 @@ class Synsets
         elsif nouns.empty?
         	return false #nouns is empty
         elsif !lookup(synset_id).empty?
-        	puts "id exists? #{synset_id}"
         	return false #synset_id already exists
         else
-        	puts "adding #{synset_id}"
         	@synsets[synset_id] = nouns
         	return true #added synset_id and nouns to synsets
         end
@@ -86,15 +79,39 @@ class Synsets
     end
 
     def findSynsets(to_find)
-        raise Exception, "Not implemented"
+    	if to_find.is_a? Array
+    		res = Hash.new
+    		res.default = []
+    		to_find.each { |noun|
+    			@synsets.each { |synset_id, nouns|
+    				if nouns.include? noun
+    					res[noun].push[synset_id]
+    				end
+    			}
+    		}
+    		puts res
+    		return res
+    		#return hash with noun as key -> id as value
+    	elsif to_find.is_a? String
+    		res = []
+    		@synsets.select { |synset_id, nouns|
+    			if nouns.include? to_find
+    				res.push(synset_id)
+    			end
+    		}
+    		return res
+    		#return array of 0 or more synset_ids containing this noun
+    	else
+    		return nil #to_find not array or string, return nil
+    	end
     end
     
-    p_v = "./inputs/public_synsets_valid"
-    p_i = "./inputs/public_synsets_invalid"
-    s = Synsets.new
-    puts "\" #{s.load(p_v)} \""
-    puts "\" #{s.load(p_i)} \""
-    puts @synsets.inspect
+    #p_v = "./inputs/public_synsets_valid"
+    #p_i = "./inputs/public_synsets_invalid"
+    #s = Synsets.new
+    #puts "\" #{s.load(p_v)} \""
+    #puts "\" #{s.load(p_i)} \""
+    #puts @synsets.inspect
 end
 
 class Hypernyms
