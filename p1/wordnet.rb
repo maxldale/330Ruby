@@ -23,9 +23,9 @@ class Synsets
     			if pattern.match? line
     				res = pattern.match(line)
     				id = res[1].to_i
-    				synset = res[2].split(',')
     				if lookup(id).empty?
     					if !success_lines[id].is_a? Array
+    						synset = res[2].split(',')
     						success_lines[id] = synset
     					else
     						#A previous line includes this ID, line invalid
@@ -80,14 +80,20 @@ class Synsets
 
     def findSynsets(to_find)
     	if to_find.is_a? Array
+    		puts "Is an Array!"
     		res = Hash.new
     		res.default = []
-    		to_find.each { |noun|
-    			@synsets.each { |synset_id, nouns|
-    				if nouns.include? noun
-    					res[noun].push[synset_id]
+    		to_find.each { |word|
+    			puts word
+    			@synsets.keys.each do |synset_id|
+    				puts "Key #{synset_id}"
+    				nouns = @synsets[synset_id]
+    				puts "Val #{@synsets[synset_id]}"
+    				if nouns.include? word
+    					puts "Noun found: #{res[word]}"
+    					res[word] << synset_id
     				end
-    			}
+    			end
     		}
     		puts res
     		return res
@@ -106,12 +112,14 @@ class Synsets
     	end
     end
     
-    #p_v = "./inputs/public_synsets_valid"
-    #p_i = "./inputs/public_synsets_invalid"
-    #s = Synsets.new
-    #puts "\" #{s.load(p_v)} \""
-    #puts "\" #{s.load(p_i)} \""
-    #puts @synsets.inspect
+    p_v = "./inputs/public_synsets_valid"
+    p_i = "./inputs/public_synsets_invalid"
+    s = Synsets.new
+    puts "\" #{s.load(p_v)} \""
+    puts "\" #{s.load(p_i)} \""
+    s.addSet(100, ["a","b","c"])
+    puts "Result: #{s.findSynsets(["a", "b"])}"
+    puts @synsets.inspect
 end
 
 class Hypernyms
