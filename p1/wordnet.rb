@@ -80,20 +80,22 @@ class Synsets
 
     def findSynsets(to_find)
     	if to_find.is_a? Array
-    		puts "Is an Array!"
+    		#puts "Is an Array!"
     		res = Hash.new
     		res.default = []
     		to_find.each { |word|
     			puts word
+    			id_arr = []
     			@synsets.keys.each do |synset_id|
-    				puts "Key #{synset_id}"
+    				#puts "Key #{synset_id}"
     				nouns = @synsets[synset_id]
-    				puts "Val #{@synsets[synset_id]}"
+    				#puts "Val #{@synsets[synset_id]}"
     				if nouns.include? word
-    					puts "Noun found: #{res[word]}"
-    					res[word] << synset_id
+    					#puts "Noun found: #{res[word]}"
+    					id_arr.push(synset_id)
     				end
     			end
+    			res[word] = id_arr
     		}
     		puts res
     		return res
@@ -112,14 +114,13 @@ class Synsets
     	end
     end
     
-    p_v = "./inputs/public_synsets_valid"
-    p_i = "./inputs/public_synsets_invalid"
-    s = Synsets.new
-    puts "\" #{s.load(p_v)} \""
-    puts "\" #{s.load(p_i)} \""
-    s.addSet(100, ["a","b","c"])
-    puts "Result: #{s.findSynsets(["a", "b"])}"
-    puts @synsets.inspect
+    #p_v = "./inputs/public_synsets_valid"
+    #p_i = "./inputs/public_synsets_invalid"
+    #s = Synsets.new
+    #puts "\" #{s.load(p_v)} \""
+    #puts "\" #{s.load(p_i)} \""
+    #s.addSet(100, ["a","b","c"])
+    #puts "Result: #{s.findSynsets(["a", "b"])}"
 end
 
 class Hypernyms
