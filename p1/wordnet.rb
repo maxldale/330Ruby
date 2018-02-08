@@ -129,17 +129,22 @@ end
 
 class Hypernyms
     def initialize
+    	#Use another hash, key as node, value as path/line/ancestor
     end
 
     def load(hypernyms_file)
+    	#Same as Synset, though duplicate lines allowed
         raise Exception, "Not implemented"
     end
 
     def addHypernym(source, destination)
+    	#Add a directed egde, provided both ids exist
         raise Exception, "Not implemented"
     end
 
     def lca(id1, id2)
+    	#Ideally, both nodes share an ancestor
+    	#Look up algorithm for this
         raise Exception, "Not implemented"
     end
 end
