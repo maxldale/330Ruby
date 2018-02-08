@@ -3,6 +3,9 @@ require_relative "graph.rb"
 #NOTE: We may assume correct arg types
 #However, it's still a good habit to check    	
 class Synsets
+	#Pattern to mach on our Synset lines
+	@@pattern = /^id: (\d+) synset: ((\w+[,]?)+)$/
+	
     def initialize
     	@synsets = Hash.new
     	@synsets.default = []
@@ -15,45 +18,53 @@ class Synsets
     		raise Exception, "Synsets: load: synsets_file NOT a file"
     	else
     		file_lines = File.readlines(synsets_file)
-    		success_lines = Hash.new
-    		error_lines = []
-    		index = 1
-    		file_lines.each { |line|
-    			pattern = /^id: (\d+) synset: ((\w+[,]?)+)$/
-    			if pattern.match? line
-    				res = pattern.match(line)
-    				id = res[1].to_i
-    				if lookup(id).empty?
-    					if !success_lines[id].is_a? Array
-    						synset = res[2].split(',')
-    						success_lines[id] = synset
-    					else
-    						#A previous line includes this ID, line invalid
-    						error_lines.push(index)
-    					end
-    				else
-    					#Synset already contains this ID, line invalid
-    					error_lines.push(index)
+    		res = processLines(file_lines)
+    		if res.is_a? Hash
+    			#All lines were valid
+    			res.keys.each do |id|
+    				if !addSet(id, res[id])
+    					raise Exception, "Synsets: load: id: #{id} exists already!"
     				end
-    			else
-    				#Failed to match on pattern, line invalid
-    				error_lines.push(index)
     			end
-    			index = index + 1
-    		}
-    		#Gone through all lines, check for invalid lines
+    			return nil #Everything was valid and was added
+    		else
+    			#One or more lines failed, no changes
+    			return res
+    		end
     	end
-    	puts success_lines.size
-    	puts success_lines
-    	if error_lines.empty?
-    		success_lines.keys.each do |id|
-    			if !addSet(id, success_lines[id])
-    				raise Exception, "Synsets: load: id: #{id} exists already!"
+    end
+    
+    def processLines(file_lines)
+    	success_lines = Hash.new
+    	error_lines = []
+    	index = 1
+    	fail = false
+    	file_lines.each { |line|
+    		matched_line = @@pattern.match(line)
+    		success = false
+    		if matched_line.is_a? MatchData
+    			id = matched_line[1].to_i
+    			if lookup(id).empty?
+    				if !success_lines[id].is_a? Array
+    					synset = matched_line[2].split(',')
+    					success_lines[id] = synset
+    					success = true
+    				end
     			end
     		end
-    		return nil #Everything checked out and was added
+    		if !success
+    			#A previous line includes this ID, line invalid
+    			#OR Synset already contains this ID, line invalid
+    			#OR Failed to match on pattern, line invalid
+    			error_lines.push(index)
+    			fail = true
+    		end
+    		index = index + 1
+    	}
+    	if fail
+    		return error_lines
     	else
-    		return error_lines #These lines didn't check out, no changes
+    		return success_lines
     	end
     end
 
@@ -80,26 +91,24 @@ class Synsets
 
     def findSynsets(to_find)
     	if to_find.is_a? Array
-    		#puts "Is an Array!"
     		res = Hash.new
     		res.default = []
+    		#Go through all the words to find
     		to_find.each { |word|
     			puts word
     			id_arr = []
+    			#Go through each Synset to see if word is an element
     			@synsets.keys.each do |synset_id|
-    				#puts "Key #{synset_id}"
     				nouns = @synsets[synset_id]
-    				#puts "Val #{@synsets[synset_id]}"
     				if nouns.include? word
-    					#puts "Noun found: #{res[word]}"
     					id_arr.push(synset_id)
     				end
     			end
+    			#Add all the ids which have that noun
     			res[word] = id_arr
     		}
-    		puts res
-    		return res
     		#return hash with noun as key -> id as value
+    		return res
     	elsif to_find.is_a? String
     		res = []
     		@synsets.select { |synset_id, nouns|
@@ -107,20 +116,15 @@ class Synsets
     				res.push(synset_id)
     			end
     		}
-    		return res
     		#return array of 0 or more synset_ids containing this noun
+    		return res
     	else
     		return nil #to_find not array or string, return nil
     	end
     end
     
-    #p_v = "./inputs/public_synsets_valid"
-    #p_i = "./inputs/public_synsets_invalid"
-    #s = Synsets.new
-    #puts "\" #{s.load(p_v)} \""
-    #puts "\" #{s.load(p_i)} \""
-    #s.addSet(100, ["a","b","c"])
-    #puts "Result: #{s.findSynsets(["a", "b"])}"
+    
+    private :processLines
 end
 
 class Hypernyms
