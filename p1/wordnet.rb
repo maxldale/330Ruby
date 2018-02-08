@@ -4,7 +4,8 @@ require_relative "graph.rb"
 #However, it's still a good habit to check    	
 class Synsets
 	#Pattern to mach on our Synset lines
-	@@pattern = /^id: (\d+) synset: ((\w+[,]?)+)$/
+	#Compound assignment (||=) only assigns once
+	@@pattern ||= /^id: (\d+) synset: ((\w+[,]?)+)$/
 	
     def initialize
     	@synsets = Hash.new
@@ -130,6 +131,8 @@ end
 class Hypernyms
     def initialize
     	#Use another hash, key as node, value as path/line/ancestor
+    	@hypernyms = Hash.new
+    	@hypernyms.default = []
     end
 
     def load(hypernyms_file)
@@ -138,8 +141,23 @@ class Hypernyms
     end
 
     def addHypernym(source, destination)
-    	#Add a directed egde, provided both ids exist
-        raise Exception, "Not implemented"
+    	if !source.is_a? Integer
+        	raise Exception, "Hypernyms: addHypernym: source NOT an Integer!"
+        elsif !destination.is_a? Integer
+        	raise Exception, "Hypernyms: addHypernym: destination NOT an Integer!"
+        elsif source < 0 || destination < 0
+        	return false #source or destination is negative
+        elsif source == destination
+        	return false #source and destination the same
+        else
+        	prev_dest_arr = @hypernyms[source]
+        	if !prev_dest_arr.include? destination
+        		new_dest_arr = prev_dest_arr.push(destination).sort
+        		@hypernyms[source] = new_dest_arr
+        		return true #added edge to hypernyms
+        	end
+        	return true #valid edge added (if not duplicate)
+        end
     end
 
     def lca(id1, id2)
@@ -147,6 +165,13 @@ class Hypernyms
     	#Look up algorithm for this
         raise Exception, "Not implemented"
     end
+    
+    h = Hypernyms.new
+    puts h.addHypernym(1,2)
+    puts h.addHypernym(1,3)
+    puts h.addHypernym(4,4)
+    puts h.addHypernym(1,2)
+    puts h.inspect
 end
 
 class CommandParser
