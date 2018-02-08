@@ -129,6 +129,10 @@ class Synsets
 end
 
 class Hypernyms
+	#Pattern to mach on our Hypernym lines
+	#Compound assignment (||=) only assigns once
+	@@pattern ||= /^from: (\d+) to: (\d+)$/
+	
     def initialize
     	#Use another hash, key as node, value as path/line/ancestor
     	@hypernyms = Hash.new
@@ -136,8 +140,64 @@ class Hypernyms
     end
 
     def load(hypernyms_file)
-    	#Same as Synset, though duplicate lines allowed
-        raise Exception, "Not implemented"
+    	if !File.exist? hypernyms_file
+    		raise Exception, "Hypernyms: load: hypernyms_file does NOT exist"
+    	elsif !File.file? synsets_file
+    		raise Exception, "Hypernyms: load: hypernyms_file NOT a file"
+    	else
+    		file_lines = File.readlines(synsets_file)
+    		res = processLines(file_lines)
+    		if res.is_a? Hash
+    			res.keys.each do |from|
+    				to_arr = res[from]
+    				to_arr.each { |to|
+    					if !addHypernym(from, to)
+    						raise Exception, "Hypernyms: load: invalid: #{from} -> #{to}"
+    					end
+    				}
+    				return nil #everything was valid and added
+    			end
+    		else
+    			#At least one line failed, return line numbers
+    			return res
+    		end
+    	end
+    end
+    
+    def processLines(file_lines)
+    	success_lines = Hash.new
+    	error_lines = []
+    	index = 1
+    	fail = false
+    	file_lines.each { |line|
+    		matched_line = @@pattern.match(line)
+    		success = false
+    		if matched_line.is_a? MatchData
+    			from = matched_line[1].to_i
+    			to = matched_line[2].to_i
+    			if from >= 0 || to >= 0
+    				if !(from == to)
+    					prev_to = success_lines[from]
+    					new_to = prev_to.push(to)
+    					success_lines[from] = new_to
+    					success = true
+    				end
+    			end
+    		end
+    		if !success
+    			#A previous line includes this ID, line invalid
+    			#OR Synset already contains this ID, line invalid
+    			#OR Failed to match on pattern, line invalid
+    			error_lines.push(index)
+    			fail = true
+    		end
+    		index = index + 1
+    	}
+    	if fail
+    		return error_lines
+    	else
+    		return success_lines
+    	end
     end
 
     def addHypernym(source, destination)
@@ -154,7 +214,6 @@ class Hypernyms
         	if !prev_dest_arr.include? destination
         		new_dest_arr = prev_dest_arr.push(destination).sort
         		@hypernyms[source] = new_dest_arr
-        		return true #added edge to hypernyms
         	end
         	return true #valid edge added (if not duplicate)
         end
@@ -165,6 +224,8 @@ class Hypernyms
     	#Look up algorithm for this
         raise Exception, "Not implemented"
     end
+    
+    private :processLines
     
     h = Hypernyms.new
     puts h.addHypernym(1,2)
