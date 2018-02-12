@@ -5,7 +5,7 @@ require_relative "graph.rb"
 class Synsets
 	#Pattern to mach on our Synset lines
 	#Compound assignment (||=) only assigns once
-	@@pattern ||= /^id: (\d+) synset: ((\w+[,]?)+)$/
+	@@pattern ||= /^id: (\d+) synset: ([\w]+[,\w+]*)+$/
 	
     def initialize
     	@synsets = Hash.new
@@ -96,7 +96,6 @@ class Synsets
     		res.default = []
     		#Go through all the words to find
     		to_find.each { |word|
-    			puts word
     			id_arr = []
     			#Go through each Synset to see if word is an element
     			@synsets.keys.each do |synset_id|
@@ -131,32 +130,31 @@ end
 class Hypernyms
 	#Pattern to mach on our Hypernym lines
 	#Compound assignment (||=) only assigns once
-	@@pattern ||= /^from: (\d+) to: (\d+)$/
+	@@pattern ||= /^from: (\d+) to: ([\d]+[,\d+]*)+$/
 	
     def initialize
     	#Use another hash, key as node, value as path/line/ancestor
-    	@hypernyms = Hash.new
-    	@hypernyms.default = []
+    	@hypernyms = Graph.new
     end
 
     def load(hypernyms_file)
     	if !File.exist? hypernyms_file
     		raise Exception, "Hypernyms: load: hypernyms_file does NOT exist"
-    	elsif !File.file? synsets_file
+    	elsif !File.file? hypernyms_file
     		raise Exception, "Hypernyms: load: hypernyms_file NOT a file"
     	else
-    		file_lines = File.readlines(synsets_file)
+    		file_lines = File.readlines(hypernyms_file)
     		res = processLines(file_lines)
     		if res.is_a? Hash
     			res.keys.each do |from|
     				to_arr = res[from]
-    				to_arr.each { |to|
+    				to_arr.each do |to|
     					if !addHypernym(from, to)
     						raise Exception, "Hypernyms: load: invalid: #{from} -> #{to}"
     					end
-    				}
-    				return nil #everything was valid and added
+    				end
     			end
+    			return nil #everything was valid and added
     		else
     			#At least one line failed, return line numbers
     			return res
@@ -165,21 +163,19 @@ class Hypernyms
     end
     
     def processLines(file_lines)
-    	success_lines = Hash.new
+    	successLines = Hash.new{ [] }
     	error_lines = []
     	index = 1
     	fail = false
-    	file_lines.each { |line|
+    	file_lines.each do |line|
     		matched_line = @@pattern.match(line)
     		success = false
     		if matched_line.is_a? MatchData
     			from = matched_line[1].to_i
     			to = matched_line[2].to_i
-    			if from >= 0 || to >= 0
+    			if from >= 0 && to >= 0
     				if !(from == to)
-    					prev_to = success_lines[from]
-    					new_to = prev_to.push(to)
-    					success_lines[from] = new_to
+    					successLines[from] = successLines[from].push(to)
     					success = true
     				end
     			end
@@ -192,11 +188,11 @@ class Hypernyms
     			fail = true
     		end
     		index = index + 1
-    	}
+    	end
     	if fail
     		return error_lines
     	else
-    		return success_lines
+    		return successLines
     	end
     end
 
@@ -210,29 +206,59 @@ class Hypernyms
         elsif source == destination
         	return false #source and destination the same
         else
-        	prev_dest_arr = @hypernyms[source]
-        	if !prev_dest_arr.include? destination
-        		new_dest_arr = prev_dest_arr.push(destination).sort
-        		@hypernyms[source] = new_dest_arr
+        	if !@hypernyms.hasVertex? source
+        		@hypernyms.addVertex source
+        	end
+        	if !@hypernyms.hasVertex? destination
+        		@hypernyms.addVertex destination
+        	end
+        	if !@hypernyms.hasEdge?(source, destination)
+        		@hypernyms.addEdge(source, destination)
         	end
         	return true #valid edge added (if not duplicate)
         end
     end
 
     def lca(id1, id2)
-    	#Ideally, both nodes share an ancestor
-    	#Look up algorithm for this
-        raise Exception, "Not implemented"
+    	if !@hypernyms.hasVertex?(id1) || !@hypernyms.hasVertex?(id2)
+    		return nil #At least one id wasn't in our graph
+    	elsif id1 == id2
+    		return [id1]
+    	else
+    		distancesFromId1 = @hypernyms.bfs(id1)
+    		nodesIn1 = []
+    		distancesFromId2 = @hypernyms.bfs(id2)
+    		addedDistances = Hash.new
+    		addedDistances.default = -1
+    		distancesFromId1.each do |node, distance|
+    			nodesIn1.push(node)
+    		end
+    		distancesFromId2.each do |node, distance|
+    			if nodesIn1.include? node
+    				addedDistances[node] = distance
+    			end
+    		end
+    		distancesFromId1.each do |node, distance|
+    			if addedDistances[node] >= 0
+    				addedDistances[node] += distance
+    			end
+    		end
+    		lca = []
+    		lcaDist = -1
+    		addedDistances.keys.each do |id|
+    			dist = addedDistances[id]
+    			if dist < lcaDist || lcaDist < 0
+    				lca = [id]
+    				lcaDist = dist
+    			elsif dist == lcaDist
+    				lca.push(id)
+    			end
+    		end
+    		return lca
+    	end
     end
     
     private :processLines
-    
-    h = Hypernyms.new
-    puts h.addHypernym(1,2)
-    puts h.addHypernym(1,3)
-    puts h.addHypernym(4,4)
-    puts h.addHypernym(1,2)
-    puts h.inspect
 end
 
 class CommandParser
@@ -245,3 +271,4 @@ class CommandParser
         raise Exception, "Not implemented"
     end
 end
+
