@@ -262,13 +262,27 @@ class Hypernyms
 end
 
 class CommandParser
+	@@loadPattern ||= /^\s*load\s+(\S+)\s+(\S+)\s*$/
     def initialize
         @synsets = Synsets.new
         @hypernyms = Hypernyms.new
     end
 
     def parse(command)
-        raise Exception, "Not implemented"
+    	res = Hash.new
+    	matchedLoad = @@loadPattern.match(command)
+    	if matchedLoad.is_a? MatchData
+    		synFile = matchedLoad[1]
+    		hypFile = matchedLoad[2]
+    		if !(@synsets.load(synFile) == nil) || !(@hypernyms.load(hypFile) == nil)
+    			res[:recognized_command] = :load
+    			res[:result] = :error
+    		end
+    		return res
+    	end
+    	res[:recognized_command] = :invalid
+    	res[:result] = :invalid
+    	return res
     end
 end
 
