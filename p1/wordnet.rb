@@ -1,116 +1,68 @@
 require_relative "graph.rb"
 
-#NOTE: We may assume correct arg types
-#However, it's still a good habit to check    	
+#NOTE: We may assume correct arg types  	
 class Synsets
 	#Pattern to mach on our Synset lines
 	#Compound assignment (||=) only assigns once
-	@@pattern ||= /^id: (\d+) synset: ([\w]+[,\w+]*)+$/
-	
-    def initialize
-    	@synsets = Hash.new
-    	@synsets.default = []
+	@@pattern ||= /^id: (\d+) synset: ([,?[\w|\-|\.|\/|\']+]+)+$/
+
+	def initialize
+		@synsets = Hash.new{ [] }
+	end
+
+	def load(synsets_file)
+		testRes = testLoad(synsets_file)
+		#empty file, no lines
+		if testRes.empty?
+			return nil
+		elsif testRes[0].is_a? Integer #error, only line nums
+			return testRes
+		else
+			#all valid, add all lines
+			testRes.each {|data|
+				id = data[0]
+				nouns = data[1]
+				addSet(id, nouns)
+			}
+			return nil
+		end
     end
 
-    def load(synsets_file)
-    	if !File.exist? synsets_file
-    		raise Exception, "Synsets: load: synsets_file does NOT exist"
-    	elsif !File.file? synsets_file
-    		raise Exception, "Synsets: load: synsets_file NOT a file"
-    	else
-    		file_lines = File.readlines(synsets_file)
-    		res = processLines(file_lines)
-    		if res.is_a? Hash
-    			#All lines were valid
-    			res.keys.each do |id|
-    				if !addSet(id, res[id])
-    					raise Exception, "Synsets: load: id: #{id} exists already!"
-    				end
-    			end
-    			return nil #Everything was valid and was added
-    		else
-    			#One or more lines failed, no changes
-    			return res
-    		end
-    	end
-    end
-    
-    def processLines(file_lines)
-    	success_lines = Hash.new
-    	error_lines = []
-    	index = 1
-    	fail = false
-    	file_lines.each { |line|
-    		matched_line = @@pattern.match(line)
-    		success = false
-    		if matched_line.is_a? MatchData
-    			id = matched_line[1].to_i
-    			if lookup(id).empty?
-    				if !success_lines[id].is_a? Array
-    					synset = matched_line[2].split(',')
-    					success_lines[id] = synset
-    					success = true
-    				end
-    			end
-    		end
-    		if !success
-    			#A previous line includes this ID, line invalid
-    			#OR Synset already contains this ID, line invalid
-    			#OR Failed to match on pattern, line invalid
-    			error_lines.push(index)
-    			fail = true
-    		end
-    		index = index + 1
-    	}
-    	if fail
-    		return error_lines
-    	else
-    		return success_lines
-    	end
-    end
-
-    def addSet(synset_id, nouns)
-        if !synset_id.is_a? Integer
-        	raise Exception, "Synsets: addSet: synset_id NOT an Integer!"
-        elsif !nouns.is_a? Array
-        	raise Exception, "Synsets: addSet: nouns NOT an Array!"
-        elsif synset_id < 0
-        	return false #synset_id is negative
-        elsif nouns.empty?
-        	return false #nouns is empty
-        elsif !lookup(synset_id).empty?
-        	return false #synset_id already exists
-        else
+	def addSet(synset_id, nouns)
+		#check if set is valid, then add
+		if validSetToAdd?(synset_id, nouns)
         	@synsets[synset_id] = nouns
         	return true #added synset_id and nouns to synsets
+		else
+			return false #not valid
         end
     end
 
     def lookup(synset_id)
-        @synsets[synset_id]
+        return @synsets[synset_id]
     end
 
-    def findSynsets(to_find)
-    	if to_find.is_a? Array
-    		res = Hash.new
-    		res.default = []
-    		#Go through all the words to find
-    		to_find.each { |word|
-    			id_arr = []
-    			#Go through each Synset to see if word is an element
-    			@synsets.keys.each do |synset_id|
-    				nouns = @synsets[synset_id]
-    				if nouns.include? word
-    					id_arr.push(synset_id)
-    				end
-    			end
-    			#Add all the ids which have that noun
-    			res[word] = id_arr
-    		}
-    		#return hash with noun as key -> id as value
-    		return res
-    	elsif to_find.is_a? String
-    		res = []
+	def findSynsets(to_find)
+		if to_find.is_a? Array
+			res = Hash.new
+			res.default = []
+			#Go through all the words to find
+			to_find.each { |word|
+				id_arr = []
+				#Go through each Synset to see if word is an element
+				@synsets.keys.each do |synset_id|
+					nouns = @synsets[synset_id]
+					if nouns.include? word
+						id_arr.push(synset_id)
+					end
+				end
+				#Add all the ids which have that noun
+				res[word] = id_arr
+			}
+			#return hash with noun as key -> id as value
+			return res
+		elsif to_find.is_a? String
+			res = []
     		@synsets.select { |synset_id, nouns|
     			if nouns.include? to_find
     				res.push(synset_id)
@@ -123,89 +75,85 @@ class Synsets
     	end
     end
     
-    
-    private :processLines
+	#HELPER parses each line using our pattern
+	def parse(line) #String -> Array OR Nil
+		matchedLine = @@pattern.match(line)
+		if matchedLine.is_a? MatchData
+			id = matchedLine[1].to_i
+			synset = matchedLine[2].split(',')
+			return [id,synset]
+		end
+		return nil #Line is invalid format
+	end
+
+	#HELPER checks for set validity
+	def validSetToAdd?(id, nouns) #(Integer, Array) -> Boolean
+		if id < 0 || nouns.empty? || !(lookup(id).empty?)
+			return false #id negative, no nouns, id already exists
+		end
+		return true #Valid
+	end
+
+	#HELPER performs load, minus altering data
+	def testLoad(synsets_file) #String -> Array
+		fileLines = File.readlines(synsets_file)
+		parsedLines = fileLines.map {|line|
+			parse(line)
+		}
+		indexArr = []
+		invalidLines = parsedLines.each_with_index.map {|data, index|
+			if data == nil
+				index + 1
+			else
+				id = data[0]
+				nouns = data[1]
+				if !(validSetToAdd?(id, nouns)) || indexArr.include?(id)
+					index + 1
+				else
+					indexArr.push(id)
+					nil
+				end
+			end
+		}.compact
+		
+		if !invalidLines.empty?
+			return invalidLines
+		end
+		return parsedLines
+	end
 end
 
+#NOTE: We may assume correct arg types
 class Hypernyms
 	#Pattern to mach on our Hypernym lines
 	#Compound assignment (||=) only assigns once
-	@@pattern ||= /^from: (\d+) to: ([\d]+[,\d+]*)+$/
+	@@pattern ||= /^from: (\d+) to: ([,?\d+]+)+$/
 	
     def initialize
-    	#Use another hash, key as node, value as path/line/ancestor
     	@hypernyms = Graph.new
     end
 
     def load(hypernyms_file)
-    	if !File.exist? hypernyms_file
-    		raise Exception, "Hypernyms: load: hypernyms_file does NOT exist"
-    	elsif !File.file? hypernyms_file
-    		raise Exception, "Hypernyms: load: hypernyms_file NOT a file"
-    	else
-    		file_lines = File.readlines(hypernyms_file)
-    		res = processLines(file_lines)
-    		if res.is_a? Hash
-    			res.keys.each do |from|
-    				to_arr = res[from]
-    				to_arr.each do |to|
-    					if !addHypernym(from, to)
-    						raise Exception, "Hypernyms: load: invalid: #{from} -> #{to}"
-    					end
-    				end
-    			end
-    			return nil #everything was valid and added
-    		else
-    			#At least one line failed, return line numbers
-    			return res
-    		end
-    	end
-    end
-    
-    def processLines(file_lines)
-    	successLines = Hash.new{ [] }
-    	error_lines = []
-    	index = 1
-    	fail = false
-    	file_lines.each do |line|
-    		matched_line = @@pattern.match(line)
-    		success = false
-    		if matched_line.is_a? MatchData
-    			from = matched_line[1].to_i
-    			to = matched_line[2].to_i
-    			if from >= 0 && to >= 0
-    				if !(from == to)
-    					successLines[from] = successLines[from].push(to)
-    					success = true
-    				end
-    			end
-    		end
-    		if !success
-    			#A previous line includes this ID, line invalid
-    			#OR Synset already contains this ID, line invalid
-    			#OR Failed to match on pattern, line invalid
-    			error_lines.push(index)
-    			fail = true
-    		end
-    		index = index + 1
-    	end
-    	if fail
-    		return error_lines
-    	else
-    		return successLines
-    	end
+		testRes = testLoad(hypernyms_file)
+		#empty file, no lines
+		if testRes.empty?
+			return nil
+		elsif testRes[0].is_a? Integer #error, only line nums
+			return testRes
+		else
+			#all valid, add all lines
+			testRes.each {|data|
+				src = data[0]
+				dst = data[1]
+				addHypernym(src, dst)
+			}
+			return nil
+		end
     end
 
     def addHypernym(source, destination)
-    	if !source.is_a? Integer
-        	raise Exception, "Hypernyms: addHypernym: source NOT an Integer!"
-        elsif !destination.is_a? Integer
-        	raise Exception, "Hypernyms: addHypernym: destination NOT an Integer!"
-        elsif source < 0 || destination < 0
-        	return false #source or destination is negative
-        elsif source == destination
-        	return false #source and destination the same
-        else
+		#check if nym is valid, then add
+		if validNymToAdd?(source, destination)
         	if !@hypernyms.hasVertex? source
         		@hypernyms.addVertex source
         	end
@@ -216,6 +164,8 @@ class Hypernyms
         		@hypernyms.addEdge(source, destination)
         	end
         	return true #valid edge added (if not duplicate)
+		else
+			return false #not valid
         end
     end
 
@@ -228,6 +178,7 @@ class Hypernyms
     		distancesFromId1 = @hypernyms.bfs(id1)
     		nodesIn1 = []
     		distancesFromId2 = @hypernyms.bfs(id2)
+			nodesInBoth = []
     		addedDistances = Hash.new
     		addedDistances.default = -1
     		distancesFromId1.each do |node, distance|
@@ -235,11 +186,12 @@ class Hypernyms
     		end
     		distancesFromId2.each do |node, distance|
     			if nodesIn1.include? node
+					nodesInBoth.push(node)
     				addedDistances[node] = distance
     			end
     		end
     		distancesFromId1.each do |node, distance|
-    			if addedDistances[node] >= 0
+    			if nodesInBoth.include? node
     				addedDistances[node] += distance
     			end
     		end
@@ -257,32 +209,230 @@ class Hypernyms
     		return lca
     	end
     end
-    
-    private :processLines
+
+	#HELPER parses each line using our pattern
+	def parse(line) #String -> Array OR Nil
+		matchedLine = @@pattern.match(line)
+		if matchedLine.is_a? MatchData
+			src = matchedLine[1].to_i
+			dst = matchedLine[2].to_i
+			return [src,dst]
+		end
+		return nil #Line is invalid format
+	end
+
+	#HELPER checks for set validity
+	def validNymToAdd?(src, dst) #(Integer, Integer) -> Boolean
+		if src < 0 || dst < 0 || src == dst
+			return false #src or dst negative, src is dst
+		end
+		return true #Valid
+	end
+
+	#HELPER performs load, minus altering data
+	def testLoad(hypernyms_file) #String -> Array
+		fileLines = File.readlines(hypernyms_file)
+		parsedLines = fileLines.map {|line|
+			parse(line)
+		}
+		invalidLines = parsedLines.each_with_index.map {|data, index|
+			if data == nil
+				index + 1
+			else
+				src = data[0]
+				dst = data[1]
+				if !validNymToAdd?(src, dst)
+					index + 1
+				else
+					nil
+				end
+			end
+		}.compact
+		if !invalidLines.empty?
+			return invalidLines
+		end
+		return parsedLines
+	end
 end
 
 class CommandParser
-	@@loadPattern ||= /^\s*load\s+(\S+)\s+(\S+)\s*$/
+	@@loadCmd ||= /^\s*load\s+(.*)\s*$/
+	@@loadArgs ||= /^([\w||\/|\-|\.]+)\s+([\w||\/|\-|\.]+)$/
+	@@lookupCmd ||= /^\s*lookup\s+(.*)\s*$/
+	@@lookupArg ||= /^(\d+)$/
+	@@findCmd ||= /^\s*find\s+(.*)\s*$/
+	@@findArg ||= /^([\w|\-|\.|\/|\']+)$/
+	@@findManyCmd ||= /^\s*findmany\s+(.*)\s*$/
+	@@findManyArg ||= /^([,?[\w|\-|\.|\/|\']+]+)$/
+	@@lcaCmd ||= /^\s*lca\s+(.*)\s*$/
+	@@lcaArgs ||= /^(\d+)\s+(\d+)$/
+
     def initialize
         @synsets = Synsets.new
         @hypernyms = Hypernyms.new
     end
 
     def parse(command)
-    	res = Hash.new
-    	matchedLoad = @@loadPattern.match(command)
-    	if matchedLoad.is_a? MatchData
-    		synFile = matchedLoad[1]
-    		hypFile = matchedLoad[2]
-    		if !(@synsets.load(synFile) == nil) || !(@hypernyms.load(hypFile) == nil)
-    			res[:recognized_command] = :load
-    			res[:result] = :error
-    		end
-    		return res
+		#Process a load?
+		tryLoad = tryMatch(command, @@loadCmd, @@loadArgs)
+    	if tryLoad == true
+			return error(:load)
+		elsif tryLoad.is_a? Array
+    		synFile = tryLoad[1]
+    		hypFile = tryLoad[2]
+    		return processLoad(synFile, hypFile)
     	end
-    	res[:recognized_command] = :invalid
-    	res[:result] = :invalid
-    	return res
+
+		#A lookup?
+		tryLookup = tryMatch(command, @@lookupCmd, @@lookupArg)
+		if tryLookup == true
+			return error(:lookup)
+		elsif tryLookup.is_a? Array
+			id = tryLookup[1].to_i
+			return processLookup(id)
+		end
+
+		#A find (String)?
+		tryFind = tryMatch(command, @@findCmd, @@findArg)
+    	if tryFind == true
+			return error(:find)
+		elsif tryFind.is_a? Array
+			noun = tryFind[1]
+			return processFind(noun)
+		end
+
+		#A findmany (Array)?
+		tryFindMany = tryMatch(command, @@findManyCmd, @@findManyArg)
+    	if tryFindMany == true
+			return error(:find)
+		elsif tryFindMany.is_a? Array
+			nouns = tryFindMany[1].split(',')
+			return processFindMany(nouns)
+		end
+
+		#A lca?
+		tryLca = tryMatch(command, @@lcaCmd, @@lcaArgs)
+    	if tryLca == true
+			return error(:find)
+		elsif tryLca.is_a? Array
+			id1 = tryLca[1].to_i
+			id2 = tryLca[2].to_i
+			return processLca(id1, id2)
+		end
+		#Everything else is invalid
+		return invalidCommand
     end
+
+	#HELPER Matches command then tries to match args
+	def tryMatch(command, cmdPattern, argsPattern)
+		cmdMatch = cmdPattern.match(command)
+		if cmdMatch.is_a? MatchData
+			args = cmdMatch[1]
+			argsMatch = argsPattern.match(args)
+			if argsMatch.is_a? MatchData
+				return argsMatch.to_a
+			end
+			return true
+		end
+		return false
+	end
+
+	#HELPER returns command and error as result
+	def error(commandName)
+		res = Hash.new
+		res[:recognized_command] = commandName
+    	res[:result] = :error
+		return res
+	end
+
+	#HELPER returns command and result
+	def cmdSuccess(commandName, res)
+		res = Hash.new
+		res[:recognized_command] = commandName
+    	res[:result] = res
+		return res
+	end
+
+	#HELPER returns invalid command
+	def invalidCommand
+		res = Hash.new		
+    	res[:recognized_command] = :invalid
+    	return res
+	end
+	
+	#HELPER checks conditions for load, THEN if no errors adds data
+	def processLoad(synsetFile, hypernymFile)
+		valid = true
+		synTestLoadRes = @synsets.testLoad(synsetFile)
+		if synTestLoadRes.empty? || !(synTestLoadRes[0].is_a? Integer)
+			#success so far
+			hypTestLoadRes = @hypernyms.testLoad(hypernymFile)
+			if hypTestLoadRes.empty? || !(hypTestLoadRes[0].is_a? Integer)
+				#success so far
+				#check that hypernym edges all have corresponding synset ids
+				synIds = synTestLoadRes.map {|data|
+					id = data[0]
+					id
+				}
+				hypTestLoadRes.each {|data|
+					src = data[0]
+					dst = data[1]
+					if !(synIds.include? src) || !(synIds.include? dst)
+						#hypernym vertex not found in synset
+						valid = false
+					end
+					if valid == true
+						#all conditions met, add the data and return success
+						sn = @synsets.load(synsetFile)
+						synLoad = (sn == nil)
+						#TODO Error in synLoad??
+						hp = @hypernyms.load(hypernymFile)
+						hypLoad = (hp == nil)
+						if (synLoad == false) || (hypLoad == false)
+							valid = false
+						end
+					end
+				}
+			else
+				valid = false
+			end
+		else
+			valid = false
+		end
+		return cmdSuccess(:load, valid)
+	end
+
+	#HELPER performs lookup
+	def processLookup(id)
+		if id < 0
+			return error(:lookup)
+		else
+			return success(:lookup, @synsets.lookup(id))
+		end
+	end
+
+	#HELPER performs findSynset on String
+	def processFind(noun)
+		res = Hash.new
+		res[:recognized_command] = :find
+		res[:result] = @synsets.findSynsets(noun)
+		return res
+	end
+
+	#HELPER performs findSynset on Array
+	def processFindMany(nouns)
+		res = Hash.new
+		res[:recognized_command] = :findmany
+		res[:result] = @synsets.findSynsets(nouns)
+		return res
+	end
+
+	#HELPER performs lca
+	def processLca(id1, id2)
+		res = Hash.new
+		res[:recognized_command] = :lca
+		res[:result] = @hypernyms.lca(id1, id2)
+		return res
+	end
 end
 
