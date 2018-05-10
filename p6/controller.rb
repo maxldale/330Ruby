@@ -8,6 +8,7 @@ require "sqlite3"
 
 AVATAR_DIR = "./public/avatars/"
 SESSION_BITS = 32
+TOKEN_BITS = 16
 DATE_FMT = "%d %h %G at %R"
 
 #
@@ -18,10 +19,35 @@ DATE_FMT = "%d %h %G at %R"
 # Uploads a file to the server (failing if it already exists)
 # and returns success status.
 def upload_file(filename, file)
+	files = Dir.entries(".").reject {|f| File.directory?(f) }
 	path = "#{AVATAR_DIR}/#{filename}"
+	return false if not check_file filename
 	return false if File.exists? path
 	File.open(path, "wb") { |f| f.write(file.read) }
 	true
+end
+
+def clean_filename(filename)
+	filename =~ /[a-zA-z0-9]*[\.png|\.jpg]?/
+end
+
+def check_file(filename)
+	files = Dir.entries(AVATAR_DIR).reject {|f| File.directory?(f) }
+	if files.member? filename
+		true
+	elsif clean_filename filename
+		
+	else
+		false
+	end
+end
+
+def filter_avatar(avatar)
+	if check_file(avatar)
+		avatar
+	else
+		"dummy"
+	end
 end
 
 #
@@ -69,13 +95,13 @@ module Tokens
 	# issue_token : -> Integer
 	# Returns cryptographically secure token.
 	def issue_token
-		0
+		SecureRandom.random_number(2 ** TOKEN_BITS)
 	end
 
 	# assign_token : String -> Integer
 	# Assigns a token identifier to a user and returns it.
 	def assign_token(user)
-		0
+		@tokens[user] = issue_token
 	end
 end
 
@@ -94,7 +120,7 @@ module Access
 	# If credentials are valid, assigns session identifier to user
 	# and returns identifier, otherwise returns nil.
 	def authenticate(user, passwd)
-		assign_session user if get_user(user)
+		assign_session user if authenticate_user(user, passwd)
 	end
 
 	# authorize : String Integer -> Boolean
@@ -120,27 +146,28 @@ end
 
 module User
 
-        # search : String -> Hash
-        # Returns a hash containing the search query and the set of
-        # users matching the query (by name or description).
-        def search(user_query)
-                users = []
-                #TODO Sanitize query
-                query = %{
-                SELECT User, Avatar, Description
-                FROM Users
-                WHERE User LIKE '%#{user_query}%' OR
-		      Description LIKE '%#{user_query}%'
-                }
-                @db.execute(query) do |user|
-                        users << {
-                                :name => user[0],
-                                :avatar => user[1],
-                                :description => user[2]
-                        }
-                end
-                { :query => user_query, :users => users }
+    # search : String -> Hash
+    # Returns a hash containing the search query and the set of
+    # users matching the query (by name or description).
+    def search(user_query)
+        users = []
+        updated_query = "%" + user_query + "%"
+        query = %{
+        SELECT User, Avatar, Description
+        FROM Users
+        WHERE User LIKE ? OR
+	    Description LIKE ?
+        }
+        @db.execute(query, [updated_query, updated_query]) do |user|
+            users << {
+                :name => Rack::Utils.escape_html(user[0]),
+                :avatar => filter_avatar(user[1]),
+                :description => Rack::Utils.escape_html(user[2])
+            }
         end
+        { :query => user_query, :users => users }
+    end
+        
 
 	# register : String String File String String -> Boolean
 	# Registers a new user if they don't already exist and
@@ -148,19 +175,53 @@ module User
 	def register(user, filename, file, password, confirm)
 		return false if password != confirm
 		if (get_user(user) == nil)
-			upload_file(filename, file)
+			if not upload_file(filename, file)
+				filename = "dummy"
+			end
 			random = SecureRandom.random_number(2 ** SESSION_BITS)
 			salt = Digest::SHA256.hexdigest(random.to_s)
 			passHash = Digest::SHA256.hexdigest(password + salt)
 			query = %{
 			INSERT INTO Users(User, Password, Avatar, Salt)
-			VALUES ('#{user}', '#{passHash}', '#{filename}', '#{salt}')
+			VALUES (?, ?, ?, ?)
 			}
-			@db.execute query
+			@db.execute(query, [user, passHash, filename, salt])
 			true
 		else
 			false
 		end
+	end
+	
+	def get_salt(user)
+		salt = ''
+		query = %{
+		SELECT Salt
+		FROM Users
+		WHERE User = ?
+		}
+		@db.execute(query, user) do |user|
+			salt = user[0]
+		end
+		salt
+	end
+	
+	def authenticate_user(user, password)
+		salt = get_salt(user)
+		return nil if salt == ''
+		hashed_pass = Digest::SHA256.hexdigest(password + salt)
+		query = %{
+		SELECT Avatar, Description
+		FROM Users
+		WHERE User = ?
+		AND Password = ?
+		}
+		@db.execute(query, [user,hashed_pass]) do |user|
+			return {
+				:avatar => filter_avatar(user[0]),
+				:description => Rack::Utils.escape_html(user[1])
+			}
+		end
+		nil
 	end
 
 	# get_user: String -> (Hash or NilClass)
@@ -169,12 +230,12 @@ module User
 		query = %{
 		SELECT Avatar, Description
 		FROM Users
-		WHERE User = '#{user}'
+		WHERE User = ?
 		}
-		@db.execute(query) do |user|
+		@db.execute(query, user) do |user|
 			return {
-				:avatar => user[0],
-				:description => user[1]
+				:avatar => filter_avatar(user[0]),
+				:description => Rack::Utils.escape_html(user[1])
 			}
 		end
 		nil
@@ -183,12 +244,14 @@ module User
 	# update_prefs : String Integer String Integer -> Boolean
 	# Update preferences of given user returning success status.
 	def update_prefs(user, session, description, token)
+		return false if token != @tokens[user]
+		return false if session != @sessions[user]
 		query = %{
 		UPDATE Users
-		SET Description = '#{description}'
-		WHERE User = '#{user}'
+		SET Description = ?
+		WHERE User = ?
 		}
-		@db.execute query
+		@db.execute(query, [description, user])
 		true
 	end
 end
@@ -207,13 +270,14 @@ module Epsilons
 	# Publish epsilon from user with given content. Returns
 	# success status.
 	def publish_epsilon(user, session, content, token)
-		#TODO check token
+		return false if token != @tokens[user]
+		return false if session != @sessions[user]
 		timestamp = Time.now.to_i
 		query = %{
 		INSERT INTO Epsilons(User, Content, Date)
-		VALUES ('#{user}', '#{content}', #{timestamp})
+		VALUES (?, ?, ?)
 		}
-		@db.execute query
+		@db.prepare(query).execute([user, content, timestamp])
 		true
 	end
 
@@ -232,9 +296,9 @@ module Epsilons
 		@db.execute(query) do |eps|
 			date_str = Time.at(eps[3]).strftime(DATE_FMT)
 			epsilons << {
-				:user => eps[0],
-				:avatar => eps[1],
-				:content => eps[2],
+				:user => Rack::Utils.escape_html(eps[0]),
+				:avatar => filter_avatar(eps[1]),
+				:content => Rack::Utils.escape_html(eps[2]),
 				:date => date_str
 			}
 		end
@@ -269,5 +333,6 @@ class Controller
 	def initialize
 		@db = SQLite3::Database.new "data.db"
 		@sessions = {}
+		@tokens = {}
 	end
 end
